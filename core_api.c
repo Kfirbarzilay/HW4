@@ -112,8 +112,10 @@ Status Core_blocked_Multithreading(){
                 if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter > 0)
                 {
                     printf("Thread %d is still waiting\n\n",cur_thread);
-                    cur_thread = (cur_thread + 1) % ThreadsNum;
-                    globalCyclesCounter += contextPenalty;
+                    if (!isLastThread()) {
+                        cur_thread = (cur_thread + 1) % ThreadsNum;
+                        globalCyclesCounter += contextPenalty;
+                    }
                     continue;
                 }
                 else // finished IO process
@@ -228,8 +230,9 @@ Status Core_blocked_Multithreading(){
 
 
 Status Core_fineGrained_Multithreading(){
-
-	Instuction* CurIns_fg=(Instuction*)malloc(sizeof(Instuction));
+    globalCyclesCounter = 0;
+    globalInstructionsCounter = 0;
+    Instuction* CurIns_fg=(Instuction*)malloc(sizeof(Instuction));
 	int cur_thread = 0;
 	int cur_ins_per_thread = 0;
 	int32_t *dest_fg = malloc(sizeof(*dest_fg));
@@ -240,7 +243,7 @@ Status Core_fineGrained_Multithreading(){
 	ThreadsNum = Get_thread_number();
 	// initiate the contexts
 	finegrained_regs = malloc(sizeof(*finegrained_regs)*ThreadsNum);
-	for(int i=0; i<ThreadsNum; i++){
+    for(int i=0; i<ThreadsNum; i++){
 		for (int j=0; j<8; j++)
 		{
 			finegrained_regs[i].reg[j] = 0;
@@ -248,47 +251,75 @@ Status Core_fineGrained_Multithreading(){
 	}
 	// initiate the global instructions array
 	my_instructions_fg = malloc(sizeof(*my_instructions_fg)*ThreadsNum);
+    int* threadsWaitingLatency = malloc(sizeof(int) * ThreadsNum);
+    bool* threadsInIO = malloc(sizeof(bool) * ThreadsNum);
 	for (int i=0; i<ThreadsNum; i++)
 	{
 		my_instructions_fg[i] = 0;
+        threadsWaitingLatency[i] = 0;
+        threadsInIO[i] = false;
 	}
 
-
+    int loadTime, storeTime;
+    int latencies[2];
+    Mem_latency(latencies);
+    loadTime = latencies[0];
+    storeTime = latencies[1];
 
 	// the process itself
 	while (1)
 	{
 		if(my_instructions_fg[cur_thread] != -1)
 		{
+            globalCyclesCounter++;
+            printf("globalCyclesCounter = %d\n",globalCyclesCounter);
+            printf("thread %d is %s\n", cur_thread,threadsInIO[cur_thread] ? "IO" : "not waiting" );
+            printf("threadsWaitingLatency[%d] = %d\n",cur_thread, threadsWaitingLatency[cur_thread]);
 			// for(int i=0; i<3; i++)
 			// {
 				// printf("%d %d\n", i, my_instructions_fg[i]);
 			// }
 			cur_ins_per_thread = my_instructions_fg[cur_thread];
+            printf("my_instructions_fg[%d] = %d\n", cur_thread,cur_ins_per_thread);
 			SIM_MemInstRead(cur_ins_per_thread, CurIns_fg, cur_thread);
+            printf("CurIns_blocked->opcode = %d\n\n", CurIns_fg->opcode);
 			// update the instructions array
 				// printf("before everything: \n");
 				// printf("CurIns_fg->opcode: %d\n", CurIns_fg->opcode);
 				// printf("cur_ins_per_thread: %d\n", cur_ins_per_thread);
 				// printf("cur_thread: %d\n", cur_thread);
-			if (CurIns_fg!=NULL && CurIns_fg->opcode == 7) // if it is HALT OPERATION
+			if (CurIns_fg!=NULL && CurIns_fg->opcode == CMD_HALT) // if it is HALT OPERATION
 			{
 				my_instructions_fg[cur_thread] = -1;
-			}
-			else
-			{
-				//precede the instructions
-				my_instructions_fg[cur_thread] = cur_ins_per_thread+1;
-				// if (CurIns_fg!=NULL && (CurIns_fg->opcode == 5 || CurIns_fg->opcode == 6)) // if it is LOAD/STORE OPERATION
-				// {
-					// printf("in load/store: \n");
-					// scanf("%d", &debug);
-					// cur_thread = (cur_thread+1)%ThreadsNum;
-				// }
-			}
-			// make the operation
-			// printf("before operation:");
-			// scanf("%d", &debug);
+            }
+			else if( threadsInIO[cur_thread] )
+            {
+                if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter > 0)
+                {
+                    printf("Thread %d is still waiting\n\n",cur_thread);
+                    if(!isLastThread())
+                    {
+                        cur_thread = (cur_thread + 1) % ThreadsNum;
+                    }
+                    continue;
+                }
+                else // finished IO process
+                {
+                    printf("Thread %d finished IO process\n\n",cur_thread);
+                    threadsInIO[cur_thread] = false;
+                    threadsWaitingLatency[cur_thread] = 0;
+                    globalInstructionsCounter++;
+                    printf("finished IO command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                    if(!isLastThread())
+                    {
+                        cur_thread = (cur_thread + 1) % ThreadsNum;
+                    }
+                    continue;
+                }
+            } else
+            {
+                my_instructions_fg[cur_thread] = cur_ins_per_thread+1;
+            }
 
 			if (CurIns_fg!=NULL)
 			{
@@ -303,49 +334,57 @@ Status Core_fineGrained_Multithreading(){
 						// printf("block_regs[cur_thread].reg[src1_index]: %d\n",block_regs[cur_thread].reg[CurIns_fg->src1_index]);
 						// printf("block_regs[cur_thread].reg[src2_index_imm]: %d\n",block_regs[cur_thread].reg[CurIns_fg->src2_index_imm]);
 						op_add_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
+						globalInstructionsCounter++;
+                        printf("finished ADD command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 						// printf("finegrained_regs[cur_thread].reg[CurIns_fg->dst_index: %d\n", finegrained_regs[cur_thread].reg[CurIns_fg->dst_index]);
 						// printf("cur_thread: %d\n", cur_thread);
 						break;
 					case CMD_SUB:
 						// printf("in sub\n");
 						op_sub_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
-						break;
+						globalInstructionsCounter++;
+                        printf("finished SUB command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        break;
 					case CMD_ADDI:
 						// printf("in addi\n");
 						op_addi_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
-						break;
+						globalInstructionsCounter++;
+                        printf("finished ADDI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        break;
 					case CMD_SUBI:
 						// printf("in subi\n");
 						op_subi_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
-						break;
+						globalInstructionsCounter++;
+                        printf("finished SUBI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        break;
 					case CMD_LOAD:
 						// printf("in load\n");
 						TargetAddress = finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + CurIns_fg->src2_index_imm;
 						SIM_MemDataRead(TargetAddress, dest_fg);
 						finegrained_regs[cur_thread].reg[CurIns_fg->dst_index] = (int)(*dest_fg);
-						// printf("finegrained_regs[cur_thread].reg[CurIns_fg->dst_index: %d\n", finegrained_regs[cur_thread].reg[CurIns_fg->dst_index]);
-						// printf("cur_thread: %d\n", cur_thread);
-						// cur_thread = (cur_thread+1)%ThreadsNum;
+                        threadsWaitingLatency[cur_thread] = globalCyclesCounter + loadTime;
+                        threadsInIO[cur_thread] = true;
 						break;
 					case CMD_STORE:
 						// printf("in store\n");
 						SIM_MemDataWrite(CurIns_fg->dst_index, finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + CurIns_fg->src2_index_imm);
-						// cur_thread = (cur_thread+1)%ThreadsNum;
-						break;
+                        threadsWaitingLatency[cur_thread] = globalCyclesCounter + storeTime;
+                        threadsInIO[cur_thread] = true;
+                        break;
 					case CMD_HALT:
 						// op_halt();
 						// cur_thread = (cur_thread+1)%ThreadsNum;
 						// printf("in halt\n");
-						break;
+                        globalInstructionsCounter++;
+                        printf("finished HALT command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+
+                        break;
 				}
 			}
 		}
 
-		// else
-		// {
-		cur_thread = (cur_thread+1)%ThreadsNum;
-		// }
-		// stop condition
+        if (!isLastThread())
+            cur_thread = (cur_thread+1)%ThreadsNum;
 		finished = true;
 		for (int i=0; i<ThreadsNum; i++)
 		{
@@ -434,5 +473,5 @@ void op_addi_fg(int dst_index, int src1_index, int src2_index_imm, int cur_threa
 
 void op_subi_fg(int dst_index, int src1_index, int src2_index_imm, int cur_thread)
 {
-	finegrained_regs[cur_thread].reg[dst_index] = finegrained_regs[cur_thread].reg[src1_index] - src2_index_imm;
+    finegrained_regs[cur_thread].reg[dst_index] = finegrained_regs[cur_thread].reg[src1_index] - src2_index_imm;
 }

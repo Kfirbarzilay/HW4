@@ -4,6 +4,15 @@
 #include "sim_api.h"
 
 #include <stdio.h>
+
+#define DEBUG
+
+#ifdef DEBUG
+#define DEBUG_PRINT(...) do{ fprintf( stdout, __VA_ARGS__ ); } while( false )
+#else
+#define DEBUG_PRINT(...) do{ } while ( false )
+#endif
+
 void op_add_blocked(int dst_index, int src1_index, int src2_index_imm, int cur_thread);
 void op_sub_blocked(int dst_index, int src1_index, int src2_index_imm, int cur_thread);
 void op_addi_blocked(int dst_index, int src1_index, int src2_index_imm, int cur_thread);
@@ -36,6 +45,18 @@ bool isLastThread()
     }
     return numOfThreadsRunning == 1;
 }
+
+bool noThreadsInCore() {
+    bool finished = true;
+    for (int i = 0; i < ThreadsNum; i++) {
+        if (my_instructions_fg[i] != -1) {
+            finished = false;
+        }
+    }
+    return finished;
+}
+
+
 
 Status Core_blocked_Multithreading(){
     globalCyclesCounter = 0;
@@ -86,32 +107,32 @@ Status Core_blocked_Multithreading(){
 		{
             // TODO Every operation is at least 1 cycle
             globalCyclesCounter++;
-            printf("globalCyclesCounter = %d\n",globalCyclesCounter);
-            printf("thread %d is %s\n", cur_thread,threadsInIO[cur_thread] ? "IO" : "not waiting" );
-            printf("threadsWaitingLatency[%d] = %d\n",cur_thread, threadsWaitingLatency[cur_thread]);
+            DEBUG_PRINT("globalCyclesCounter = %d\n",globalCyclesCounter);
+            DEBUG_PRINT("thread %d is %s\n", cur_thread,threadsInIO[cur_thread] ? "IO" : "not waiting" );
+            DEBUG_PRINT("threadsWaitingLatency[%d] = %d\n",cur_thread, threadsWaitingLatency[cur_thread]);
 
 			// for(int i=0; i<3; i++)
             // {
-            // printf("%d %d\n", i, my_instructions_blocked[i]);
+            // DEBUG_PRINT("%d %d\n", i, my_instructions_blocked[i]);
             // }
             cur_ins_per_thread = my_instructions_blocked[cur_thread];
-            printf("my_instructions_blocked[%d] = %d\n", cur_thread,cur_ins_per_thread);
+            DEBUG_PRINT("my_instructions_blocked[%d] = %d\n", cur_thread,cur_ins_per_thread);
             SIM_MemInstRead(cur_ins_per_thread, CurIns_blocked, cur_thread);
-            printf("CurIns_blocked->opcode = %d\n\n", CurIns_blocked->opcode);
+            DEBUG_PRINT("CurIns_blocked->opcode = %d\n\n", CurIns_blocked->opcode);
             // update the instructions array
-            // printf("before everything: \n");
-            // printf("CurIns_blocked->opcode: %d\n", CurIns_blocked->opcode);
-            // printf("cur_ins_per_thread: %d\n", cur_ins_per_thread);
-            // printf("cur_thread: %d\n", cur_thread);
-            if (CurIns_blocked!=NULL && CurIns_blocked->opcode == CMD_HALT) // if it is HALT OPERATION
+            // DEBUG_PRINT("before everything: \n");
+            // DEBUG_PRINT("CurIns_blocked->opcode: %d\n", CurIns_blocked->opcode);
+            // DEBUG_PRINT("cur_ins_per_thread: %d\n", cur_ins_per_thread);
+            // DEBUG_PRINT("cur_thread: %d\n", cur_thread);
+            if (CurIns_blocked!=NULL && CurIns_blocked->opcode == CMD_HALT && !threadsInIO[cur_thread]) // if it is HALT OPERATION
             {
                 my_instructions_blocked[cur_thread] = -1;
             }
             else if( threadsInIO[cur_thread] )
             {
-                if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter > 0)
+                if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter >= 0)
                 {
-                    printf("Thread %d is still waiting\n\n",cur_thread);
+                    DEBUG_PRINT("Thread %d is still waiting\n\n",cur_thread);
                     if (!isLastThread()) {
                         cur_thread = (cur_thread + 1) % ThreadsNum;
                         globalCyclesCounter += contextPenalty;
@@ -120,11 +141,11 @@ Status Core_blocked_Multithreading(){
                 }
                 else // finished IO process
                 {
-                    printf("Thread %d finished IO process\n\n",cur_thread);
+                    DEBUG_PRINT("Thread %d finished IO process\n\n",cur_thread);
                     threadsInIO[cur_thread] = false;
                     threadsWaitingLatency[cur_thread] = 0;
                     globalInstructionsCounter++;
-                    printf("finished IO command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                    DEBUG_PRINT("finished IO command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
                     continue;
                 }
             } else
@@ -133,7 +154,7 @@ Status Core_blocked_Multithreading(){
             }
             // Thread is in IO
             //make the operation
-			// printf("before operation:");
+			// DEBUG_PRINT("before operation:");
 			// scanf("%d", &debug);
 
 			if (CurIns_blocked!=NULL)
@@ -142,35 +163,39 @@ Status Core_blocked_Multithreading(){
 					case CMD_NOP:
 						break;
 					case CMD_ADD:
-						// printf("in add\n");
-						// printf("CurIns_blocked->dst_index: %d\n", CurIns_blocked->dst_index);
-						// printf("CurIns_blocked->src1_index: %d\n", CurIns_blocked->src1_index);
-						// printf("CurIns_blocked->src2_index_imm: %d\n", CurIns_blocked->src2_index_imm);
+						// DEBUG_PRINT("in add\n");
+						// DEBUG_PRINT("CurIns_blocked->dst_index: %d\n", CurIns_blocked->dst_index);
+						// DEBUG_PRINT("CurIns_blocked->src1_index: %d\n", CurIns_blocked->src1_index);
+						// DEBUG_PRINT("CurIns_blocked->src2_index_imm: %d\n", CurIns_blocked->src2_index_imm);
 						op_add_blocked(CurIns_blocked->dst_index, CurIns_blocked->src1_index, CurIns_blocked->src2_index_imm, cur_thread);
 						globalInstructionsCounter++;
-                        printf("finished ADD command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished ADD command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 						break;
 					case CMD_SUB:
-						// printf("in sub\n");
+						// DEBUG_PRINT("in sub\n");
 						op_sub_blocked(CurIns_blocked->dst_index, CurIns_blocked->src1_index, CurIns_blocked->src2_index_imm, cur_thread);
                         globalInstructionsCounter++;
-                        printf("finished SUB command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished SUB command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 						break;
 					case CMD_ADDI:
-						// printf("in addi\n");
+						// DEBUG_PRINT("in addi\n");
 						op_addi_blocked(CurIns_blocked->dst_index, CurIns_blocked->src1_index, CurIns_blocked->src2_index_imm, cur_thread);
                         globalInstructionsCounter++;
-                        printf("finished ADDI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished ADDI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 						break;
 					case CMD_SUBI:
-						// printf("in subi\n");
+						// DEBUG_PRINT("in subi\n");
 						op_subi_blocked(CurIns_blocked->dst_index, CurIns_blocked->src1_index, CurIns_blocked->src2_index_imm, cur_thread);
                         globalInstructionsCounter++;
-                        printf("finished SUBI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished SUBI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 						break;
 					case CMD_LOAD:
-					// printf("in load\n");
-						TargetAddress = block_regs[cur_thread].reg[CurIns_blocked->src1_index] + CurIns_blocked->src2_index_imm;
+					// DEBUG_PRINT("in load\n");
+					// TODO note that it may not be an immediate
+					    if (CurIns_blocked->isSrc2Imm)
+						    TargetAddress = block_regs[cur_thread].reg[CurIns_blocked->src1_index] + CurIns_blocked->src2_index_imm;
+                        else
+                            TargetAddress = block_regs[cur_thread].reg[CurIns_blocked->src1_index] + block_regs[cur_thread].reg[CurIns_blocked->src2_index_imm];
 						SIM_MemDataRead(TargetAddress, dest_blocked);
 						block_regs[cur_thread].reg[CurIns_blocked->dst_index] = (int)(*dest_blocked);
 						// TODO make a context switch to next thread.
@@ -182,8 +207,12 @@ Status Core_blocked_Multithreading(){
                         cur_thread = (cur_thread+1)%ThreadsNum;
                         break;
 					case CMD_STORE:
-						// printf("in store\n");
-						SIM_MemDataWrite(CurIns_blocked->dst_index, block_regs[cur_thread].reg[CurIns_blocked->src1_index] + CurIns_blocked->src2_index_imm);
+						// DEBUG_PRINT("in store\n");
+                        // TODO note that it may not be an immediate
+                        if (CurIns_blocked->isSrc2Imm)
+						    SIM_MemDataWrite(block_regs[cur_thread].reg[CurIns_blocked->src1_index] + CurIns_blocked->src2_index_imm, CurIns_blocked->dst_index);
+                        else
+                            SIM_MemDataWrite(block_regs[cur_thread].reg[CurIns_blocked->src1_index] + block_regs[cur_thread].reg[CurIns_blocked->src2_index_imm], CurIns_blocked->dst_index);
                         threadsWaitingLatency[cur_thread] = globalCyclesCounter + storeTime;
                         threadsInIO[cur_thread] = true;
                         if (!isLastThread())
@@ -194,9 +223,9 @@ Status Core_blocked_Multithreading(){
 						// op_halt();
 						globalCyclesCounter += contextPenalty;
                         globalInstructionsCounter++;
-                        printf("finished HALT command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished HALT command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 						cur_thread = (cur_thread+1)%ThreadsNum;
-						//printf("Should never get here\n");
+						//DEBUG_PRINT("Should never get here\n");
 						break;
 				}
 			}
@@ -218,11 +247,11 @@ Status Core_blocked_Multithreading(){
 		// TODO: If the last op was halt add the penalty.
 		if (finished)
 		{
-            globalCyclesCounter -= contextPenalty;
+            globalCyclesCounter -= contextPenalty + 1;
 			break;
 		}
-		// printf("cur_thread: %d\n", cur_thread);
-		// printf("my_instructions_blocked[cur_thread]: %d\n", my_instructions_blocked[cur_thread]);
+		// DEBUG_PRINT("cur_thread: %d\n", cur_thread);
+		// DEBUG_PRINT("my_instructions_blocked[cur_thread]: %d\n", my_instructions_blocked[cur_thread]);
 	}
 
 	return Success;
@@ -272,23 +301,23 @@ Status Core_fineGrained_Multithreading(){
 		if(my_instructions_fg[cur_thread] != -1)
 		{
             globalCyclesCounter++;
-            printf("globalCyclesCounter = %d\n",globalCyclesCounter);
-            printf("thread %d is %s\n", cur_thread,threadsInIO[cur_thread] ? "IO" : "not waiting" );
-            printf("threadsWaitingLatency[%d] = %d\n",cur_thread, threadsWaitingLatency[cur_thread]);
+            DEBUG_PRINT("globalCyclesCounter = %d\n",globalCyclesCounter);
+            DEBUG_PRINT("thread %d is %s\n", cur_thread,threadsInIO[cur_thread] ? "IO" : "not waiting" );
+            DEBUG_PRINT("threadsWaitingLatency[%d] = %d\n",cur_thread, threadsWaitingLatency[cur_thread]);
 			// for(int i=0; i<3; i++)
 			// {
-				// printf("%d %d\n", i, my_instructions_fg[i]);
+				// DEBUG_PRINT("%d %d\n", i, my_instructions_fg[i]);
 			// }
 			cur_ins_per_thread = my_instructions_fg[cur_thread];
-            printf("my_instructions_fg[%d] = %d\n", cur_thread,cur_ins_per_thread);
+            DEBUG_PRINT("my_instructions_fg[%d] = %d\n", cur_thread,cur_ins_per_thread);
 			SIM_MemInstRead(cur_ins_per_thread, CurIns_fg, cur_thread);
-            printf("CurIns_blocked->opcode = %d\n\n", CurIns_fg->opcode);
+            DEBUG_PRINT("CurIns_blocked->opcode = %d\n\n", CurIns_fg->opcode);
 			// update the instructions array
-				// printf("before everything: \n");
-				// printf("CurIns_fg->opcode: %d\n", CurIns_fg->opcode);
-				// printf("cur_ins_per_thread: %d\n", cur_ins_per_thread);
-				// printf("cur_thread: %d\n", cur_thread);
-			if (CurIns_fg!=NULL && CurIns_fg->opcode == CMD_HALT) // if it is HALT OPERATION
+				// DEBUG_PRINT("before everything: \n");
+				// DEBUG_PRINT("CurIns_fg->opcode: %d\n", CurIns_fg->opcode);
+				// DEBUG_PRINT("cur_ins_per_thread: %d\n", cur_ins_per_thread);
+				// DEBUG_PRINT("cur_thread: %d\n", cur_thread);
+			if (CurIns_fg!=NULL && CurIns_fg->opcode == CMD_HALT && !threadsInIO[cur_thread]) // if it is HALT OPERATION
 			{
 				my_instructions_fg[cur_thread] = -1;
             }
@@ -296,7 +325,7 @@ Status Core_fineGrained_Multithreading(){
             {
                 if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter > 0)
                 {
-                    printf("Thread %d is still waiting\n\n",cur_thread);
+                    DEBUG_PRINT("Thread %d is still waiting\n\n",cur_thread);
                     if(!isLastThread())
                     {
                         cur_thread = (cur_thread + 1) % ThreadsNum;
@@ -305,11 +334,11 @@ Status Core_fineGrained_Multithreading(){
                 }
                 else // finished IO process
                 {
-                    printf("Thread %d finished IO process\n\n",cur_thread);
+                    DEBUG_PRINT("Thread %d finished IO process\n\n",cur_thread);
                     threadsInIO[cur_thread] = false;
                     threadsWaitingLatency[cur_thread] = 0;
                     globalInstructionsCounter++;
-                    printf("finished IO command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                    DEBUG_PRINT("finished IO command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
                     if(!isLastThread())
                     {
                         cur_thread = (cur_thread + 1) % ThreadsNum;
@@ -327,56 +356,63 @@ Status Core_fineGrained_Multithreading(){
 					case CMD_NOP:
 						break;
 					case CMD_ADD:
-						// printf("in add\n");
-						// printf("CurIns_fg->dst_index: %d\n", CurIns_fg->dst_index);
-						// printf("CurIns_fg->src1_index: %d\n", CurIns_fg->src1_index);
-						// printf("CurIns_fg->src2_index_imm: %d\n", CurIns_fg->src2_index_imm);
-						// printf("block_regs[cur_thread].reg[src1_index]: %d\n",block_regs[cur_thread].reg[CurIns_fg->src1_index]);
-						// printf("block_regs[cur_thread].reg[src2_index_imm]: %d\n",block_regs[cur_thread].reg[CurIns_fg->src2_index_imm]);
+						// DEBUG_PRINT("in add\n");
+						// DEBUG_PRINT("CurIns_fg->dst_index: %d\n", CurIns_fg->dst_index);
+						// DEBUG_PRINT("CurIns_fg->src1_index: %d\n", CurIns_fg->src1_index);
+						// DEBUG_PRINT("CurIns_fg->src2_index_imm: %d\n", CurIns_fg->src2_index_imm);
+						// DEBUG_PRINT("block_regs[cur_thread].reg[src1_index]: %d\n",block_regs[cur_thread].reg[CurIns_fg->src1_index]);
+						// DEBUG_PRINT("block_regs[cur_thread].reg[src2_index_imm]: %d\n",block_regs[cur_thread].reg[CurIns_fg->src2_index_imm]);
 						op_add_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
 						globalInstructionsCounter++;
-                        printf("finished ADD command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
-						// printf("finegrained_regs[cur_thread].reg[CurIns_fg->dst_index: %d\n", finegrained_regs[cur_thread].reg[CurIns_fg->dst_index]);
-						// printf("cur_thread: %d\n", cur_thread);
+                        DEBUG_PRINT("finished ADD command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+						// DEBUG_PRINT("finegrained_regs[cur_thread].reg[CurIns_fg->dst_index: %d\n", finegrained_regs[cur_thread].reg[CurIns_fg->dst_index]);
+						// DEBUG_PRINT("cur_thread: %d\n", cur_thread);
 						break;
 					case CMD_SUB:
-						// printf("in sub\n");
+						// DEBUG_PRINT("in sub\n");
 						op_sub_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
 						globalInstructionsCounter++;
-                        printf("finished SUB command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished SUB command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
                         break;
 					case CMD_ADDI:
-						// printf("in addi\n");
+						// DEBUG_PRINT("in addi\n");
 						op_addi_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
 						globalInstructionsCounter++;
-                        printf("finished ADDI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished ADDI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
                         break;
 					case CMD_SUBI:
-						// printf("in subi\n");
+						// DEBUG_PRINT("in subi\n");
 						op_subi_fg(CurIns_fg->dst_index, CurIns_fg->src1_index, CurIns_fg->src2_index_imm, cur_thread);
 						globalInstructionsCounter++;
-                        printf("finished SUBI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished SUBI command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
                         break;
 					case CMD_LOAD:
-						// printf("in load\n");
-						TargetAddress = finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + CurIns_fg->src2_index_imm;
+						// DEBUG_PRINT("in load\n");
+                        // TODO note that it may not be an immediate
+                        if (CurIns_fg->isSrc2Imm)
+						    TargetAddress = finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + CurIns_fg->src2_index_imm;
+                        else
+                            TargetAddress = finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + finegrained_regs[cur_thread].reg[CurIns_fg->src2_index_imm];
 						SIM_MemDataRead(TargetAddress, dest_fg);
 						finegrained_regs[cur_thread].reg[CurIns_fg->dst_index] = (int)(*dest_fg);
                         threadsWaitingLatency[cur_thread] = globalCyclesCounter + loadTime;
                         threadsInIO[cur_thread] = true;
 						break;
 					case CMD_STORE:
-						// printf("in store\n");
-						SIM_MemDataWrite(CurIns_fg->dst_index, finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + CurIns_fg->src2_index_imm);
+						// DEBUG_PRINT("in store\n");
+                        if (CurIns_fg->isSrc2Imm)
+						    SIM_MemDataWrite(finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + CurIns_fg->src2_index_imm,CurIns_fg->dst_index);
+                        else
+                            SIM_MemDataWrite(finegrained_regs[cur_thread].reg[CurIns_fg->src1_index] + finegrained_regs[cur_thread].reg[CurIns_fg->src2_index_imm], CurIns_fg->dst_index);
                         threadsWaitingLatency[cur_thread] = globalCyclesCounter + storeTime;
                         threadsInIO[cur_thread] = true;
                         break;
 					case CMD_HALT:
 						// op_halt();
 						// cur_thread = (cur_thread+1)%ThreadsNum;
-						// printf("in halt\n");
+						// DEBUG_PRINT("in halt\n");
                         globalInstructionsCounter++;
-                        printf("finished HALT command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
+                        DEBUG_PRINT("finished HALT command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 
                         break;
 				}
@@ -397,8 +433,8 @@ Status Core_fineGrained_Multithreading(){
 		{
 			break;
 		}
-		// printf("cur_thread: %d\n", cur_thread);
-		// printf("my_instructions_fg[cur_thread]: %d\n", my_instructions_fg[cur_thread]);
+		// DEBUG_PRINT("cur_thread: %d\n", cur_thread);
+		// DEBUG_PRINT("my_instructions_fg[cur_thread]: %d\n", my_instructions_fg[cur_thread]);
 	}
 
 	return Success;
@@ -433,9 +469,9 @@ Status Core_finegrained_context(tcontext* finegrained_context,int threadid){
 void op_add_blocked(int dst_index, int src1_index, int src2_index_imm, int cur_thread)
 {
 	block_regs[cur_thread].reg[dst_index] = block_regs[cur_thread].reg[src1_index] + block_regs[cur_thread].reg[src2_index_imm];
-	// printf("block_regs[cur_thread].reg[src1_index]: %d\n",block_regs[cur_thread].reg[src1_index]);
-	// printf("block_regs[cur_thread].reg[src2_index_imm]: %d\n",block_regs[cur_thread].reg[src2_index_imm]);
-	// printf("in func: block_regs[cur_thread].reg[dst_index]: %d\n",block_regs[cur_thread].reg[dst_index]);
+	// DEBUG_PRINT("block_regs[cur_thread].reg[src1_index]: %d\n",block_regs[cur_thread].reg[src1_index]);
+	// DEBUG_PRINT("block_regs[cur_thread].reg[src2_index_imm]: %d\n",block_regs[cur_thread].reg[src2_index_imm]);
+	// DEBUG_PRINT("in func: block_regs[cur_thread].reg[dst_index]: %d\n",block_regs[cur_thread].reg[dst_index]);
 }
 
 void op_sub_blocked(int dst_index, int src1_index, int src2_index_imm, int cur_thread)
@@ -456,9 +492,9 @@ void op_subi_blocked(int dst_index, int src1_index, int src2_index_imm, int cur_
 void op_add_fg(int dst_index, int src1_index, int src2_index_imm, int cur_thread)
 {
 	finegrained_regs[cur_thread].reg[dst_index] = finegrained_regs[cur_thread].reg[src1_index] + finegrained_regs[cur_thread].reg[src2_index_imm];
-	// printf("finegrained_regs[cur_thread].reg[src1_index]: %d\n",finegrained_regs[cur_thread].reg[src1_index]);
-	// printf("finegrained_regs[cur_thread].reg[src2_index_imm]: %d\n",finegrained_regs[cur_thread].reg[src2_index_imm]);
-	// printf("in func: finegrained_regs[cur_thread].reg[dst_index]: %d\n",finegrained_regs[cur_thread].reg[dst_index]);
+	// DEBUG_PRINT("finegrained_regs[cur_thread].reg[src1_index]: %d\n",finegrained_regs[cur_thread].reg[src1_index]);
+	// DEBUG_PRINT("finegrained_regs[cur_thread].reg[src2_index_imm]: %d\n",finegrained_regs[cur_thread].reg[src2_index_imm]);
+	// DEBUG_PRINT("in func: finegrained_regs[cur_thread].reg[dst_index]: %d\n",finegrained_regs[cur_thread].reg[dst_index]);
 }
 
 void op_sub_fg(int dst_index, int src1_index, int src2_index_imm, int cur_thread)

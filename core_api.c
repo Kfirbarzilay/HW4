@@ -22,6 +22,7 @@ void op_sub_fg(int dst_index, int src1_index, int src2_index_imm, int cur_thread
 void op_addi_fg(int dst_index, int src1_index, int src2_index_imm, int cur_thread);
 void op_subi_fg(int dst_index, int src1_index, int src2_index_imm, int cur_thread);
 
+
 int ThreadsNum;
 int * my_instructions_blocked;
 int * my_instructions_fg;
@@ -33,17 +34,32 @@ int debug;
 int globalCyclesCounter;
 int globalInstructionsCounter;
 
-bool isLastThread()
+bool isLastThread_blocked(int threadNum)
 {
     int numOfThreadsRunning = 0;
     for (int i=0; i<ThreadsNum; i++)
     {
+        if(threadNum == i) continue;
         if(my_instructions_blocked[i]!= -1)
         {
             numOfThreadsRunning++;
         }
     }
-    return numOfThreadsRunning == 1;
+    return numOfThreadsRunning == 0;
+}
+
+bool isLastThread_fg(int threadNum)
+{
+    int numOfThreadsRunning = 0;
+    for (int i=0; i<ThreadsNum; i++)
+    {
+        if (threadNum == i) continue;
+        if(my_instructions_fg[i]!= -1)
+        {
+            numOfThreadsRunning++;
+        }
+    }
+    return numOfThreadsRunning == 0;
 }
 
 bool noThreadsInCore() {
@@ -133,7 +149,7 @@ Status Core_blocked_Multithreading(){
                 if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter >= 0)
                 {
                     DEBUG_PRINT("Thread %d is still waiting\n\n",cur_thread);
-                    if (!isLastThread()) {
+                    if (!isLastThread_blocked(cur_thread)) {
                         cur_thread = (cur_thread + 1) % ThreadsNum;
                         globalCyclesCounter += contextPenalty;
                     }
@@ -202,7 +218,7 @@ Status Core_blocked_Multithreading(){
 						// TODO state that the thread is in IO operation and store the clock cycle where memory data is ready
                         threadsWaitingLatency[cur_thread] = globalCyclesCounter + loadTime;
                         threadsInIO[cur_thread] = true;
-                        if (!isLastThread())
+                        if (!isLastThread_blocked(cur_thread))
                             globalCyclesCounter += contextPenalty;
                         cur_thread = (cur_thread+1)%ThreadsNum;
                         break;
@@ -215,13 +231,14 @@ Status Core_blocked_Multithreading(){
                             SIM_MemDataWrite(block_regs[cur_thread].reg[CurIns_blocked->src1_index] + block_regs[cur_thread].reg[CurIns_blocked->src2_index_imm], CurIns_blocked->dst_index);
                         threadsWaitingLatency[cur_thread] = globalCyclesCounter + storeTime;
                         threadsInIO[cur_thread] = true;
-                        if (!isLastThread())
+                        if (!isLastThread_blocked(cur_thread))
                             globalCyclesCounter += contextPenalty;
                         cur_thread = (cur_thread+1)%ThreadsNum;
                         break;
 					case CMD_HALT:
 						// op_halt();
-						globalCyclesCounter += contextPenalty;
+						if(!isLastThread_blocked(cur_thread))
+						        globalCyclesCounter += contextPenalty;
                         globalInstructionsCounter++;
                         DEBUG_PRINT("finished HALT command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
 						cur_thread = (cur_thread+1)%ThreadsNum;
@@ -247,7 +264,6 @@ Status Core_blocked_Multithreading(){
 		// TODO: If the last op was halt add the penalty.
 		if (finished)
 		{
-            globalCyclesCounter -= contextPenalty + 1;
 			break;
 		}
 		// DEBUG_PRINT("cur_thread: %d\n", cur_thread);
@@ -323,10 +339,10 @@ Status Core_fineGrained_Multithreading(){
             }
 			else if( threadsInIO[cur_thread] )
             {
-                if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter > 0)
+                if  (threadsWaitingLatency[cur_thread] - globalCyclesCounter >= 0)
                 {
                     DEBUG_PRINT("Thread %d is still waiting\n\n",cur_thread);
-                    if(!isLastThread())
+                    if(!isLastThread_fg(cur_thread))
                     {
                         cur_thread = (cur_thread + 1) % ThreadsNum;
                     }
@@ -339,7 +355,7 @@ Status Core_fineGrained_Multithreading(){
                     threadsWaitingLatency[cur_thread] = 0;
                     globalInstructionsCounter++;
                     DEBUG_PRINT("finished IO command. globalInstructionsCounter = %d\n", globalInstructionsCounter);
-                    if(!isLastThread())
+                    if(!isLastThread_fg(cur_thread))
                     {
                         cur_thread = (cur_thread + 1) % ThreadsNum;
                     }
@@ -418,8 +434,8 @@ Status Core_fineGrained_Multithreading(){
 				}
 			}
 		}
-
-        if (!isLastThread())
+        // If there are threads left other then this thread context switch to next thread
+        if (!isLastThread_fg(cur_thread))
             cur_thread = (cur_thread+1)%ThreadsNum;
 		finished = true;
 		for (int i=0; i<ThreadsNum; i++)
@@ -439,6 +455,7 @@ Status Core_fineGrained_Multithreading(){
 
 	return Success;
 }
+
 
 
 double Core_finegrained_CPI(){
